@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { useApp, type ListFilter } from '../store/app'
 import { useOrg, placementOf } from '../store/org'
 import { inboxSections, snoozedChats, visibleChats } from '../lib/select'
-import { preview, shortTime, whenLabel } from '../lib/format'
+import { dateLabel, laterTargets, preview, shortTime, whenLabel } from '../lib/format'
+import { useNow } from '../lib/useNow'
 import { useLang, useT, type Key } from '../lib/i18n'
 import type { Chat } from '../tg/types'
 import { Avatar, Lamp, kindIcon } from './bits'
@@ -130,14 +131,28 @@ function Inbox() {
   const setSnooze = useOrg((s) => s.setSnooze)
   const [open, setOpen] = useState<Record<string, boolean>>({})
 
+  const now = useNow()
+  const due = org.reminders.filter((r) => r.at <= now && chats[r.chatId]).sort((a, b) => a.at - b.at)
+  const dueKey = due.map((r) => r.chatId).join(',')
   const sections = useMemo(() => {
     const h = held && chats[held.id]
-    return inboxSections(h ? { ...chats, [h.id]: { ...h, unread: held.unread, mentions: held.mentions } } : chats, org)
-  }, [chats, org, held])
+    const base = inboxSections(h ? { ...chats, [h.id]: { ...h, unread: held.unread, mentions: held.mentions } } : chats, org, now)
+    // A chat with a due reminder shows once, in Reminders.
+    const dueIds = new Set(dueKey.split(','))
+    return base.map((s) => ({ ...s, chats: s.chats.filter((c) => !dueIds.has(c.id)) })).filter((s) => s.chats.length)
+  }, [chats, org, held, now, dueKey])
   const snoozed = useMemo(() => snoozedChats(chats, org), [chats, org])
-  listOrder.ids = sections.filter((s) => !(s.collapsed && !open[s.key])).flatMap((s) => s.chats.map((c) => c.id))
+  const upcoming = [
+    ...org.reminders
+      .filter((r) => r.at > now && chats[r.chatId])
+      .map((r) => ({ key: r.id, chatId: r.chatId, at: r.at, kind: 'inbox.kindReminder' as const, text: r.note })),
+    ...org.followups
+      .filter((f) => chats[f.chatId])
+      .map((f) => ({ key: f.id, chatId: f.chatId, at: f.at, kind: 'inbox.kindFollowup' as const, text: f.text })),
+  ].sort((a, b) => a.at - b.at)
+  listOrder.ids = [...due.map((r) => r.chatId), ...sections.filter((s) => !(s.collapsed && !open[s.key])).flatMap((s) => s.chats.map((c) => c.id))]
 
-  if (!sections.length && !snoozed.length)
+  if (!sections.length && !snoozed.length && !due.length && !upcoming.length)
     return (
       <div className="list">
         <p className="empty inbox-empty">{t('inbox.empty')}</p>
@@ -146,6 +161,36 @@ function Inbox() {
 
   return (
     <div className="list">
+      {due.length > 0 && (
+        <section className="inbox-sec reminders">
+          <header>
+            <span className="sec-toggle">
+              <Icon name="alarm" size={14} /> {t('inbox.reminders')}
+              <span className="sec-count">{due.length}</span>
+            </span>
+          </header>
+          {due.map((r) => (
+            <div key={r.id} className="reminder-row">
+              <ChatRow chat={chats[r.chatId]} showWs />
+              <div className="reminder-meta">
+                {r.note && <p className="reminder-note">{r.note}</p>}
+                <div className="row-btns">
+                  <button className="btn sm" onClick={() => org.removeReminder(r.id)}>
+                    <Icon name="check" size={14} /> {t('rem.done')}
+                  </button>
+                  {laterTargets()
+                    .slice(0, 2)
+                    .map((p) => (
+                      <button key={p.key} className="btn sm ghost" onClick={() => org.moveReminder(r.id, p.at)}>
+                        {t(p.key)}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
       {sections.map((s) => {
         const expanded = !s.collapsed || open[s.key]
         return (
@@ -166,6 +211,27 @@ function Inbox() {
           </section>
         )
       })}
+      {upcoming.length > 0 && (
+        <section className="inbox-sec upcoming">
+          <header>
+            <button className="sec-toggle" onClick={() => setOpen({ ...open, upcoming: !open.upcoming })} aria-expanded={!!open.upcoming}>
+              <Icon name={open.upcoming ? 'down' : 'right'} size={14} />
+              <Icon name="alarm" size={14} /> {t('inbox.upcoming')}
+              <span className="sec-count">{upcoming.length}</span>
+            </button>
+          </header>
+          {open.upcoming &&
+            upcoming.map((u) => (
+              <button key={u.key} className="upcoming-row" onClick={() => useApp.getState().openChat(u.chatId)}>
+                <span className="upcoming-when">
+                  <b>{t(u.kind)}</b> {dateLabel(u.at, lang)}
+                </span>
+                <span className="ellipsis upcoming-title">{chats[u.chatId].title}</span>
+                {u.text && <span className="ellipsis muted small">{u.text}</span>}
+              </button>
+            ))}
+        </section>
+      )}
       {snoozed.length > 0 && (
         <section className="inbox-sec snoozed">
           <header>
@@ -206,6 +272,7 @@ export function ChatRow({ chat, showWs }: { chat: Chat; showWs?: boolean }) {
   const ws = p ? org.workspaces.find((w) => w.id === p.ws) : undefined
   const tags = (org.chatTags[chat.id] ?? []).map((id) => org.tags.find((x) => x.id === id)).filter(Boolean)
   const prio = org.priority[chat.id]
+  const pending = org.reminders.some((r) => r.chatId === chat.id) || org.followups.some((f) => f.chatId === chat.id)
   const sender = chat.last && chat.kind === 'group' ? (chat.last.out ? t('chat.you') : chat.last.senderName?.split(' ')[0]) : chat.last?.out ? t('chat.you') : ''
 
   const onClick = (e: React.MouseEvent) => {
@@ -241,6 +308,7 @@ export function ChatRow({ chat, showWs }: { chat: Chat; showWs?: boolean }) {
             <span className="ellipsis">{chat.title}</span>
             {chat.muted && <Icon name="mute" size={13} className="row-muted" />}
             {prio === 'high' && <span className="prio" title={t('details.pHigh')} />}
+            {pending && <Icon name="alarm" size={13} className="row-alarm" />}
           </span>
           <time className="row-time">{chat.last ? shortTime(chat.last.date, lang) : ''}</time>
         </div>

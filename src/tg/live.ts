@@ -4,7 +4,9 @@ import { NewMessage, type NewMessageEvent } from 'telegram/events'
 import { Raw } from 'telegram/events'
 import { get as idbGet, set as idbSet } from 'idb-keyval'
 import { enqueue, limiter } from '../lib/queue'
-import type { Chat, ChatKind, Me, Media, Message, Provider, Topic, Update } from './types'
+import { accountStore, isEphemeral } from '../lib/storage'
+import bigInt from 'big-integer'
+import type { Chat, ChatKind, Me, Media, Message, Provider, ScheduledMessage, Topic, Update } from './types'
 
 const SESSION_KEY = 'sb.session'
 const CREDS_KEY = 'sb.apiCreds'
@@ -14,34 +16,37 @@ export interface ApiCreds {
   apiHash: string
 }
 
-/** Build-time credentials win; self-hosters without them can paste their own in the UI. */
+/** A key pasted by the person wins (bring your own key); otherwise the one built into this deployment. */
 export function getCreds(): ApiCreds | null {
-  const id = Number(import.meta.env.VITE_TG_API_ID)
-  const hash = import.meta.env.VITE_TG_API_HASH as string | undefined
-  if (id && hash) return { apiId: id, apiHash: hash }
   try {
-    const saved = JSON.parse(localStorage.getItem(CREDS_KEY) || 'null')
+    const saved = JSON.parse(accountStore()?.getItem(CREDS_KEY) || 'null')
     if (saved?.apiId && saved?.apiHash) return { apiId: Number(saved.apiId), apiHash: String(saved.apiHash) }
   } catch {
     /* ignore */
   }
+  const id = Number(import.meta.env.VITE_TG_API_ID)
+  const hash = import.meta.env.VITE_TG_API_HASH as string | undefined
+  if (id && hash) return { apiId: id, apiHash: hash }
   return null
 }
+
+export const hasOwnCreds = () => !!accountStore()?.getItem(CREDS_KEY)
 
 export const credsFromBuild = () => !!(Number(import.meta.env.VITE_TG_API_ID) && import.meta.env.VITE_TG_API_HASH)
 
 export function forgetCreds() {
   localStorage.removeItem(CREDS_KEY)
+  sessionStorage.removeItem(CREDS_KEY)
 }
 
 export function saveCreds(c: ApiCreds) {
-  localStorage.setItem(CREDS_KEY, JSON.stringify(c))
+  accountStore()?.setItem(CREDS_KEY, JSON.stringify(c))
 }
 
-export const hasSession = () => !!localStorage.getItem(SESSION_KEY)
+export const hasSession = () => !!accountStore()?.getItem(SESSION_KEY)
 
 export function makeClient(creds: ApiCreds): TelegramClient {
-  const client = new TelegramClient(new StringSession(localStorage.getItem(SESSION_KEY) || ''), creds.apiId, creds.apiHash, {
+  const client = new TelegramClient(new StringSession(accountStore()?.getItem(SESSION_KEY) || ''), creds.apiId, creds.apiHash, {
     connectionRetries: 5,
     useWSS: true,
     deviceModel: 'Switchboard Web',
@@ -54,10 +59,13 @@ export function makeClient(creds: ApiCreds): TelegramClient {
 }
 
 export function persistSession(client: TelegramClient) {
-  localStorage.setItem(SESSION_KEY, (client.session as StringSession).save())
+  accountStore()?.setItem(SESSION_KEY, (client.session as StringSession).save())
 }
 
-export const clearSession = () => localStorage.removeItem(SESSION_KEY)
+export const clearSession = () => {
+  localStorage.removeItem(SESSION_KEY)
+  sessionStorage.removeItem(SESSION_KEY)
+}
 
 const b64url = (buf: Uint8Array) =>
   btoa(String.fromCharCode(...buf)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -231,6 +239,10 @@ export class LiveProvider implements Provider {
     } else if (u instanceof Api.UpdateReadChannelInbox) {
       const chatId = utils.getPeerId(new Api.PeerChannel({ channelId: u.channelId }))
       this.emit({ type: 'read', chatId, maxId: u.maxId, unread: u.stillUnreadCount })
+    } else if (u instanceof Api.UpdateDeleteScheduledMessages) {
+      this.emit({ type: 'scheduledChanged', chatId: utils.getPeerId(u.peer) })
+    } else if (u instanceof Api.UpdateNewScheduledMessage && !(u.message instanceof Api.MessageEmpty) && u.message.peerId) {
+      this.emit({ type: 'scheduledChanged', chatId: utils.getPeerId(u.message.peerId) })
     } else if (u instanceof Api.UpdateFolderPeers || u instanceof Api.UpdateNotifySettings || u instanceof Api.UpdatePinnedDialogs) {
       this.emit({ type: 'dialogsChanged' })
     }
@@ -354,13 +366,13 @@ export class LiveProvider implements Provider {
   async avatar(chat: Chat): Promise<string | null> {
     if (!chat.photoId) return null
     const key = `av:${chat.id}:${chat.photoId}`
-    let bytes = (await idbGet(key).catch(() => undefined)) as Uint8Array | undefined
+    let bytes = isEphemeral() ? undefined : ((await idbGet(key).catch(() => undefined)) as Uint8Array | undefined)
     if (!bytes) {
       const e = await this.entity(chat.id)
       const buf = await this.readLimit(() => this.client.downloadProfilePhoto(e, { isBig: false }))
       if (!buf || typeof buf === 'string' || !buf.length) return null
       bytes = new Uint8Array(buf)
-      idbSet(key, bytes).catch(() => undefined)
+      if (!isEphemeral()) idbSet(key, bytes).catch(() => undefined)
     }
     return URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/jpeg' }))
   }
@@ -375,7 +387,7 @@ export class LiveProvider implements Provider {
 
   async thumb(chatId: string, messageId: number): Promise<string | null> {
     const key = `th:${chatId}:${messageId}`
-    let bytes = (await idbGet(key).catch(() => undefined)) as Uint8Array | undefined
+    let bytes = isEphemeral() ? undefined : ((await idbGet(key).catch(() => undefined)) as Uint8Array | undefined)
     if (!bytes) {
       const m = await this.rawMessage(chatId, messageId)
       if (!m?.media) return null
@@ -384,7 +396,7 @@ export class LiveProvider implements Provider {
       const buf = await this.readLimit(() => this.client.downloadMedia(m, { thumb }))
       if (!buf || typeof buf === 'string' || !buf.length) return null
       bytes = new Uint8Array(buf)
-      idbSet(key, bytes).catch(() => undefined)
+      if (!isEphemeral()) idbSet(key, bytes).catch(() => undefined)
     }
     return URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'image/jpeg' }))
   }
@@ -401,6 +413,38 @@ export class LiveProvider implements Provider {
     const e = await this.entity(chatId)
     const list = await this.client.getMessages(e, { search: query, limit: 50 })
     return list.map((m) => convert(m, chatId)).filter((m): m is Message => !!m)
+  }
+
+  async scheduled(chatId: string): Promise<ScheduledMessage[]> {
+    const peer = await this.client.getInputEntity(await this.entity(chatId))
+    const res = await this.client.invoke(new Api.messages.GetScheduledHistory({ peer, hash: bigInt(0) }))
+    if (!('messages' in res)) return []
+    return res.messages
+      .filter((m): m is Api.Message => m instanceof Api.Message)
+      .map((m) => ({ id: m.id, chatId, date: m.date, text: m.message }))
+      .sort((a, b) => a.date - b.date)
+  }
+
+  async schedule(chatId: string, text: string, at: number, opts?: { replyTo?: number; topicId?: number }): Promise<ScheduledMessage> {
+    const e = await this.entity(chatId)
+    const date = Math.floor(at / 1000)
+    const replyTo = opts?.replyTo ?? (opts?.topicId && opts.topicId !== 1 ? opts.topicId : undefined)
+    await this.client.sendMessage(e, { message: text, schedule: date, replyTo })
+    // The send call does not reliably hand back the scheduled id, so read it from the queue.
+    const list = await this.scheduled(chatId)
+    const mine = list.filter((m) => m.text === text && Math.abs(m.date - date) < 90).pop()
+    if (!mine) throw new Error('Scheduled message not found after sending')
+    return mine
+  }
+
+  async cancelScheduled(chatId: string, ids: number[]) {
+    const peer = await this.client.getInputEntity(await this.entity(chatId))
+    await enqueue(() => this.client.invoke(new Api.messages.DeleteScheduledMessages({ peer, id: ids })))
+  }
+
+  async sendScheduledNow(chatId: string, ids: number[]) {
+    const peer = await this.client.getInputEntity(await this.entity(chatId))
+    await enqueue(() => this.client.invoke(new Api.messages.SendScheduledMessages({ peer, id: ids })))
   }
 
   onUpdate(cb: (u: Update) => void) {

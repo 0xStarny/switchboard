@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import type { Chat, Me, Message, Provider, Topic, Update } from '../tg/types'
+import type { Chat, Me, Message, Provider, ScheduledMessage, Topic, Update } from '../tg/types'
 import { useOrg } from './org'
+import { onIncoming, reconcileFollowups } from './followups'
 
 export type View = { kind: 'inbox' } | { kind: 'all' } | { kind: 'ws'; id: string; folder?: string } | { kind: 'unsorted' }
 export type ListFilter = 'all' | 'unread' | 'groups' | 'channels' | 'dms' | 'muted' | 'archived'
@@ -20,6 +21,7 @@ interface AppStore {
   messages: Record<string, Message[]>
   topics: Record<string, Topic[]>
   hasMore: Record<string, boolean>
+  scheduled: Record<string, ScheduledMessage[]>
 
   view: View
   filter: ListFilter
@@ -46,6 +48,11 @@ interface AppStore {
   setTopic(id?: number): void
   loadOlder(chatId: string): Promise<void>
   send(text: string, replyTo?: number): Promise<void>
+  loadScheduled(chatId: string): Promise<void>
+  /** Schedule on Telegram; with cancelOnReply it becomes a follow-up Switchboard withdraws if they answer. */
+  scheduleMessage(text: string, at: number, opts?: { replyTo?: number; cancelOnReply?: boolean }): Promise<void>
+  cancelScheduled(chatId: string, ids: number[]): Promise<void>
+  sendScheduledNow(chatId: string, ids: number[]): Promise<void>
   markRead(ids: string[]): Promise<void>
   setMuted(ids: string[], muted: boolean): Promise<void>
   setArchived(ids: string[], archived: boolean): Promise<void>
@@ -74,6 +81,10 @@ function applyUpdate(u: Update) {
     useApp.setState({ chats: { ...s.chats, [u.chatId]: { ...c, unread: u.unread, readMaxId: u.maxId, mentions: u.unread ? c.mentions : 0 } } })
     return
   }
+  if (u.type === 'scheduledChanged') {
+    s.loadScheduled(u.chatId).catch(() => undefined)
+    return
+  }
   const m = u.message
   const c = s.chats[m.chatId]
   if (!c) return
@@ -88,7 +99,7 @@ function applyUpdate(u: Update) {
   if (list && !list.some((x) => x.id === m.id)) patch.messages = { ...s.messages, [m.chatId]: [...list, m] }
   useApp.setState(patch)
   if (isOpen && !m.out) s.provider?.markRead(m.chatId, m.id).catch(() => undefined)
-  // A new message wakes a snoozed chat only if it mentions us; otherwise snooze holds.
+  if (!m.out) onIncoming(m)
 }
 
 export const useApp = create<AppStore>((set, get) => ({
@@ -97,6 +108,7 @@ export const useApp = create<AppStore>((set, get) => ({
   messages: {},
   topics: {},
   hasMore: {},
+  scheduled: {},
   view: { kind: 'inbox' },
   filter: 'all',
   query: '',
@@ -116,6 +128,7 @@ export const useApp = create<AppStore>((set, get) => ({
       unsubscribe?.()
       unsubscribe = p.onUpdate(applyUpdate)
       set({ ready: true })
+      reconcileFollowups().catch(() => undefined)
     } catch (err) {
       set({ loadError: String((err as Error).message ?? err) })
       throw err
@@ -169,6 +182,7 @@ export const useApp = create<AppStore>((set, get) => ({
         .catch(() => undefined)
     }
     if (chat.unread > 0 || chat.mentions > 0) get().markRead([id])
+    get().loadScheduled(id).catch(() => undefined)
   },
   setTopic(topicId) {
     set({ topicId })
@@ -196,6 +210,32 @@ export const useApp = create<AppStore>((set, get) => ({
       messages: { ...s.messages, [openChatId]: list.some((m) => m.id === msg.id) ? list : [...list, msg] },
       chats: c ? { ...s.chats, [openChatId]: { ...c, last: { id: msg.id, text: msg.text, date: msg.date, out: true } } } : s.chats,
     })
+  },
+  async loadScheduled(chatId) {
+    const p = get().provider
+    if (!p) return
+    const list = await p.scheduled(chatId)
+    set({ scheduled: { ...get().scheduled, [chatId]: list } })
+    // A follow-up whose message left the queue was either sent or deleted elsewhere: stop tracking it.
+    const org = useOrg.getState()
+    for (const f of org.followups) if (f.chatId === chatId && !list.some((m) => m.id === f.scheduledId)) org.removeFollowup(f.id)
+  },
+  async scheduleMessage(text, at, opts) {
+    const { provider, openChatId, topicId } = get()
+    if (!provider || !openChatId || !text.trim()) return
+    const m = await provider.schedule(openChatId, text.trim(), at, { replyTo: opts?.replyTo, topicId })
+    set({ scheduled: { ...get().scheduled, [openChatId]: [...(get().scheduled[openChatId] ?? []).filter((x) => x.id !== m.id), m].sort((a, b) => a.date - b.date) } })
+    if (opts?.cancelOnReply) useOrg.getState().addFollowup({ chatId: openChatId, scheduledId: m.id, at, text: m.text })
+  },
+  async cancelScheduled(chatId, ids) {
+    await get().provider?.cancelScheduled(chatId, ids)
+    set({ scheduled: { ...get().scheduled, [chatId]: (get().scheduled[chatId] ?? []).filter((m) => !ids.includes(m.id)) } })
+    const org = useOrg.getState()
+    for (const f of org.followups) if (f.chatId === chatId && ids.includes(f.scheduledId)) org.removeFollowup(f.id)
+  },
+  async sendScheduledNow(chatId, ids) {
+    await get().provider?.sendScheduledNow(chatId, ids)
+    await get().loadScheduled(chatId)
   },
   async markRead(ids) {
     const { provider } = get()

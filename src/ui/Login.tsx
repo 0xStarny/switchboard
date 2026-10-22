@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import type { TelegramClient } from 'telegram'
-import { credsFromBuild, forgetCreds, getCreds, loginWithPhone, loginWithQr, makeClient, saveCreds, type ApiCreds } from '../tg/live'
+import { credsFromBuild, forgetCreds, getCreds, hasOwnCreds, loginWithPhone, loginWithQr, makeClient, saveCreds, type ApiCreds } from '../tg/live'
+import { isEphemeral, setEphemeral } from '../lib/storage'
 import { explainError, useLang, useT } from '../lib/i18n'
 import { Icon } from './Icon'
 
@@ -32,6 +33,8 @@ export function Login({ onDone, onDemo }: { onDone: (c: TelegramClient) => void;
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [value, setValue] = useState('')
+  const [ephemeral, setEph] = useState(isEphemeral())
+  const [ownKey, setOwnKey] = useState(false)
   const clientRef = useRef<TelegramClient | null>(null)
   const answer = useRef<((v: string) => void) | null>(null)
   const generation = useRef(0)
@@ -140,7 +143,10 @@ export function Login({ onDone, onDemo }: { onDone: (c: TelegramClient) => void;
             <Icon name="checks" /> {lang === 'fr' ? 'Actions groupées : lire, couper, archiver, déplacer 40 groupes d’un coup' : 'Bulk actions: read, mute, archive or move 40 groups at once'}
           </li>
         </ul>
-        <p className="login-privacy">{t('login.privacy')}</p>
+        <div className="login-privacy">
+          <p className="privacy-strong">{t('login.privacy')}</p>
+          <p>{t('login.privacyLocal')}</p>
+        </div>
         <p className="login-meta">
           {t('app.unofficial')}{' '}
           {REPO && (
@@ -160,12 +166,31 @@ export function Login({ onDone, onDemo }: { onDone: (c: TelegramClient) => void;
       </section>
 
       <section className="login-card" aria-live="polite">
-        {!creds ? (
+        <label className="check ephemeral">
+          <input
+            type="checkbox"
+            checked={ephemeral}
+            onChange={(e) => {
+              // Applies to what gets saved from now on, so set it before signing in.
+              setEphemeral(e.target.checked)
+              setEph(e.target.checked)
+            }}
+          />
+          <span>
+            {t('login.ephemeral')}
+            <small>{t('login.ephemeralHelp')}</small>
+          </span>
+        </label>
+        {!creds || ownKey ? (
           <CredsForm
+            needed={!creds}
             onSave={(c) => {
+              generation.current++
               saveCreds(c)
+              setOwnKey(false)
               setCreds(c)
             }}
+            onCancel={creds ? () => setOwnKey(false) : undefined}
           />
         ) : (
           <>
@@ -210,7 +235,12 @@ export function Login({ onDone, onDemo }: { onDone: (c: TelegramClient) => void;
             )}
             {step === 'done' && <p className="muted">{t('login.loading')}</p>}
             {error && <p className="error">{error}</p>}
-            {error && !credsFromBuild() && (
+            {!error && (
+              <button className="link-btn sm own-key" onClick={() => setOwnKey(true)}>
+                {t('login.ownKey')}
+              </button>
+            )}
+            {error && (hasOwnCreds() || !credsFromBuild()) && (
               <button
                 className="link-btn sm"
                 onClick={() => {
@@ -233,7 +263,7 @@ export function Login({ onDone, onDemo }: { onDone: (c: TelegramClient) => void;
   )
 }
 
-function CredsForm({ onSave }: { onSave: (c: ApiCreds) => void }) {
+function CredsForm({ onSave, onCancel, needed }: { onSave: (c: ApiCreds) => void; onCancel?: () => void; needed: boolean }) {
   const t = useT()
   const [id, setId] = useState('')
   const [hash, setHash] = useState('')
@@ -248,8 +278,19 @@ function CredsForm({ onSave }: { onSave: (c: ApiCreds) => void }) {
         if (apiId && apiHash.length >= 16) onSave({ apiId, apiHash })
       }}
     >
-      <h1>{t('login.creds')}</h1>
-      <p className="muted">{t('login.credsHelp')}</p>
+      <h1>{needed ? t('login.creds') : t('login.ownKey')}</h1>
+      <p className="muted">{needed ? t('login.credsHelp') : t('login.ownKeyIntro')}</p>
+      <ol className="key-steps">
+        <li>
+          {t('login.step1')}{' '}
+          <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer">
+            my.telegram.org
+          </a>
+        </li>
+        <li>{t('login.step2')}</li>
+        <li>{t('login.step3')}</li>
+        <li>{t('login.step4')}</li>
+      </ol>
       <label>
         <span>{t('login.apiId')}</span>
         <input value={id} onChange={(e) => setId(e.target.value)} inputMode="numeric" autoComplete="off" />
@@ -258,7 +299,13 @@ function CredsForm({ onSave }: { onSave: (c: ApiCreds) => void }) {
         <span>{t('login.apiHash')}</span>
         <input value={hash} onChange={(e) => setHash(e.target.value)} autoComplete="off" spellCheck={false} />
       </label>
+      <p className="muted small">{t('login.keyWarning')}</p>
       <button className="btn primary">{t('login.saveCreds')}</button>
+      {onCancel && (
+        <button type="button" className="link-btn" onClick={onCancel}>
+          {t('chat.cancel')}
+        </button>
+      )}
     </form>
   )
 }

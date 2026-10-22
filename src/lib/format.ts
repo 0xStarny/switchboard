@@ -78,3 +78,31 @@ export function snoozeTargets(): { key: 'snooze.1h' | 'snooze.tonight' | 'snooze
   out.push({ key: 'snooze.tomorrow', at: tomorrow.getTime() }, { key: 'snooze.week', at: monday.getTime() })
   return out
 }
+
+export type WhenKey = 'when.tomorrow' | 'when.3d' | 'when.1w' | 'when.2w'
+
+/** Follow-up horizons: days ahead at 9:00, the moment people usually act on reminders. */
+export function laterTargets(): { key: WhenKey; at: number }[] {
+  const at = (days: number) => {
+    const d = new Date()
+    d.setDate(d.getDate() + days)
+    d.setHours(9, 0, 0, 0)
+    return d.getTime()
+  }
+  return [
+    { key: 'when.tomorrow', at: at(1) },
+    { key: 'when.3d', at: at(3) },
+    { key: 'when.1w', at: at(7) },
+    { key: 'when.2w', at: at(14) },
+  ]
+}
+
+/** Value for <input type="datetime-local"> in local time. */
+export function toLocalInput(ms: number) {
+  const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60000)
+  return d.toISOString().slice(0, 16)
+}
+
+export function dateLabel(ms: number, lang: Lang) {
+  return new Date(ms).toLocaleString(lang, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}

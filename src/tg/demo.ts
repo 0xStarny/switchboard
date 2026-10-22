@@ -1,4 +1,4 @@
-import type { Chat, ChatKind, Me, Message, Provider, Topic, Update } from './types'
+import type { Chat, ChatKind, Me, Message, Provider, ScheduledMessage, Topic, Update } from './types'
 
 // A believable account for someone who lives in Telegram for work: partner
 // groups, communities, news channels, a few DMs. All names are invented.
@@ -66,6 +66,8 @@ export class DemoProvider implements Provider {
   private messages = new Map<string, Message[]>()
   private listeners = new Set<(u: Update) => void>()
   private timer?: number
+  private queue = new Map<string, ScheduledMessage[]>()
+  private seq = 50000
 
   constructor() {
     const t = now()
@@ -195,6 +197,31 @@ export class DemoProvider implements Provider {
   async search(chatId: string, query: string) {
     const q = query.toLowerCase()
     return (this.messages.get(chatId) ?? []).filter((m) => m.text.toLowerCase().includes(q))
+  }
+  async scheduled(chatId: string) {
+    return [...(this.queue.get(chatId) ?? [])]
+  }
+  async schedule(chatId: string, text: string, at: number) {
+    const m: ScheduledMessage = { id: ++this.seq, chatId, date: Math.floor(at / 1000), text }
+    this.queue.set(chatId, [...(this.queue.get(chatId) ?? []), m].sort((a, b) => a.date - b.date))
+    // Like Telegram, deliver it on time (only while the demo tab is open).
+    const delay = at - Date.now()
+    if (delay < 2 ** 31 - 1) window.setTimeout(() => this.deliver(chatId, m.id), Math.max(0, delay))
+    return m
+  }
+  private async deliver(chatId: string, id: number) {
+    const m = (this.queue.get(chatId) ?? []).find((x) => x.id === id)
+    if (!m) return
+    await this.cancelScheduled(chatId, [id])
+    const msg = await this.send(chatId, m.text)
+    this.emit({ type: 'message', message: msg })
+  }
+  async cancelScheduled(chatId: string, ids: number[]) {
+    this.queue.set(chatId, (this.queue.get(chatId) ?? []).filter((m) => !ids.includes(m.id)))
+    this.emit({ type: 'scheduledChanged', chatId })
+  }
+  async sendScheduledNow(chatId: string, ids: number[]) {
+    for (const id of ids) await this.deliver(chatId, id)
   }
   onUpdate(cb: (u: Update) => void) {
     this.listeners.add(cb)

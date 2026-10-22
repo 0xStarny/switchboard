@@ -370,10 +370,16 @@ textarea:focus {
   margin-top: 1px;
 }
 .login-privacy {
+  display: grid;
+  gap: 6px;
   font-size: 13.5px;
   color: var(--ink-2);
-  border-left: 3px solid var(--lamp);
+  border-left: 3px solid var(--danger);
   padding-left: 12px;
+}
+.privacy-strong {
+  color: var(--danger);
+  font-weight: 650;
 }
 .login-meta {
   font-size: 13px;
@@ -1651,6 +1657,210 @@ textarea:focus {
     opacity: 0;
     translate: 0 6px;
   }
+}
+
+/* --------------------------------------------------------------- login extras */
+.check {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  font-size: 13.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.check input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.check small {
+  display: block;
+  color: var(--ink-3);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.check.ephemeral {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-weight: 550;
+}
+.key-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.key-steps li::marker {
+  color: var(--accent);
+  font-weight: 700;
+}
+.own-key {
+  color: var(--ink-3);
+}
+
+/* --------------------------------------------------------------- later: reminders + scheduled */
+.later-menu {
+  width: min(330px, calc(100vw - 32px));
+  display: grid;
+  gap: 8px;
+  padding: 8px 6px 4px;
+}
+.later-title {
+  font-weight: 700;
+  font-size: 14px;
+  padding: 0 4px;
+}
+.later-menu > p.muted,
+.later-menu > p.error,
+.later-menu > .check {
+  padding: 0 4px;
+}
+.later-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--lamp) 16%, transparent);
+}
+.when {
+  display: grid;
+  gap: 1px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.when-custom {
+  display: grid;
+  gap: 6px;
+  padding: 8px 4px 4px;
+}
+.when-custom input {
+  padding: 6px 8px;
+}
+.details-reminder .later-menu {
+  width: 100%;
+  padding: 0;
+}
+.details-reminder .later-title,
+.details-reminder .later-menu > p.muted:first-of-type {
+  display: none;
+}
+.later-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+.icon-btn.has-reminder {
+  color: var(--lamp);
+}
+.row-alarm {
+  color: var(--lamp);
+  flex: none;
+}
+.scheduled {
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+}
+.scheduled-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  text-align: left;
+}
+.scheduled ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 14px 10px;
+  display: grid;
+  gap: 6px;
+  max-height: 34vh;
+  overflow: auto;
+}
+.scheduled li {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+.scheduled-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12.5px;
+}
+.scheduled-text {
+  white-space: pre-wrap;
+  font-size: 13.5px;
+}
+.fu-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--lamp) 22%, transparent);
+  color: color-mix(in srgb, var(--lamp) 55%, var(--ink));
+}
+.inbox-sec.reminders > header .sec-toggle {
+  color: color-mix(in srgb, var(--lamp) 60%, var(--ink));
+}
+.reminder-row {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--lamp) 9%, transparent);
+  margin-bottom: 6px;
+}
+.reminder-meta {
+  display: grid;
+  gap: 6px;
+  padding: 0 10px 10px 61px;
+}
+.reminder-note {
+  font-size: 13px;
+  color: var(--ink);
+  border-left: 2px solid var(--lamp);
+  padding-left: 8px;
+}
+.upcoming-row {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+.upcoming-row:hover {
+  background: color-mix(in srgb, var(--sunk) 70%, transparent);
+}
+.upcoming-when {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.upcoming-when b {
+  color: color-mix(in srgb, var(--lamp) 60%, var(--ink));
+  font-weight: 650;
+  margin-right: 4px;
+}
+.upcoming-title {
+  font-weight: 600;
 }
 
 /* --------------------------------------------------------------- responsive */

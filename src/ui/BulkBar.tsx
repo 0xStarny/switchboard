@@ -5,8 +5,9 @@ import { snoozeTargets } from '../lib/format'
 import { explainError, useT } from '../lib/i18n'
 import { Icon } from './Icon'
 import { Popover } from './bits'
+import { ReminderMenu } from './Later'
 
-type Menu = 'move' | 'tag' | 'snooze' | null
+type Menu = 'move' | 'tag' | 'snooze' | 'remind' | null
 
 export function BulkBar() {
   const t = useT()
@@ -63,6 +64,9 @@ export function BulkBar() {
         </button>
         <button className="btn sm" onClick={open('tag')}>
           <Icon name="tag" size={16} /> {t('bulk.tag')}
+        </button>
+        <button className="btn sm" onClick={open('remind')}>
+          <Icon name="alarm" size={16} /> {t('rem.button')}
         </button>
         <button className="btn sm" onClick={open('snooze')}>
           <Icon name="clock" size={16} /> {t('bulk.snooze')}
@@ -123,6 +127,17 @@ export function BulkBar() {
           >
             <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder={t('details.newTag')} aria-label={t('details.newTag')} />
           </form>
+        </Popover>
+      )}
+      {menu === 'remind' && (
+        <Popover anchor={anchor} onClose={() => setMenu(null)}>
+          <ReminderMenu
+            chatIds={selection}
+            onDone={() => {
+              setMenu(null)
+              clear()
+            }}
+          />
         </Popover>
       )}
       {menu === 'snooze' && (

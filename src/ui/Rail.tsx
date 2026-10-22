@@ -3,6 +3,7 @@ import { useApp } from '../store/app'
 import { useOrg, placementOf } from '../store/org'
 import { waitingCount } from '../lib/select'
 import { useT } from '../lib/i18n'
+import { useNow } from '../lib/useNow'
 import { Icon } from './Icon'
 
 /**
@@ -17,6 +18,7 @@ export function Rail({ onNewWorkspace, onEditWorkspace }: { onNewWorkspace: () =
   const toggleSettings = useApp((s) => s.toggleSettings)
   const togglePalette = useApp((s) => s.togglePalette)
   const org = useOrg()
+  const now = useNow()
 
   const counts = useMemo(() => {
     const list = Object.values(chats)
@@ -27,12 +29,14 @@ export function Rail({ onNewWorkspace, onEditWorkspace }: { onNewWorkspace: () =
       if (p) byWs.set(p.ws, [...(byWs.get(p.ws) ?? []), c])
       else unsorted.push(c)
     }
+    const waiting = new Set(list.filter((c) => waitingCount([c], org, now)).map((c) => c.id))
+    for (const r of org.reminders) if (r.at <= now && chats[r.chatId]) waiting.add(r.chatId)
     return {
-      inbox: waitingCount(list, org),
+      inbox: waiting.size,
       unsorted: waitingCount(unsorted, org),
       ws: Object.fromEntries(org.workspaces.map((w) => [w.id, waitingCount(byWs.get(w.id) ?? [], org)])),
     }
-  }, [chats, org])
+  }, [chats, org, now])
 
   const jack = (key: string, active: boolean, label: string, onClick: () => void, body: React.ReactNode, count: number, color?: string, onEdit?: () => void) => (
     <button

@@ -3,8 +3,10 @@ import { useApp } from '../store/app'
 import { bytes, clock, dayLabel } from '../lib/format'
 import { explainError, useLang, useT, type Key } from '../lib/i18n'
 import type { Chat, Message } from '../tg/types'
-import { Avatar, kindIcon } from './bits'
+import { Avatar, Popover, kindIcon } from './bits'
 import { Icon } from './Icon'
+import { ReminderMenu, ScheduleMenu, ScheduledBar } from './Later'
+import { useOrg } from '../store/org'
 
 const URL_RE = /(https?:\/\/[^\s<]+[^\s<.,:;"')\]!?])/g
 
@@ -90,6 +92,7 @@ export function Conversation() {
             ))}
           </select>
         )}
+        <ReminderButton chatId={chatId} />
         <button className={`icon-btn ${searching ? 'on' : ''}`} onClick={() => setSearching(!searching)} aria-label={t('chat.searchIn')} title={t('chat.searchIn')}>
           <Icon name="search" />
         </button>
@@ -99,6 +102,7 @@ export function Conversation() {
       </header>
       {searching && <ChatSearch chatId={chatId} onClose={() => setSearching(false)} />}
       <MessageList chat={chat} messages={shown} topics={!topicId ? topics : undefined} onReply={chat.canPost ? setReplyTo : undefined} />
+      <ScheduledBar chatId={chatId} />
       {chat.canPost ? (
         <Composer key={chatId} replyTo={replyTo} onCancelReply={() => setReplyTo(null)} />
       ) : (
@@ -335,6 +339,7 @@ function Composer({ replyTo, onCancelReply }: { replyTo: Message | null; onCance
   const toast = useApp((s) => s.toast)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  const [laterAnchor, setLaterAnchor] = useState<HTMLElement | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
 
   useLayoutEffect(() => {
@@ -394,6 +399,27 @@ function Composer({ replyTo, onCancelReply }: { replyTo: Message | null; onCance
             if (e.key === 'Escape' && replyTo) onCancelReply()
           }}
         />
+        <button
+          className={`icon-btn later-btn ${laterAnchor ? 'on' : ''}`}
+          onClick={(e) => setLaterAnchor(laterAnchor ? null : e.currentTarget)}
+          aria-label={t('later.title')}
+          title={t('later.title')}
+        >
+          <Icon name="later" size={19} />
+        </button>
+        {laterAnchor && (
+          <Popover anchor={laterAnchor} onClose={() => setLaterAnchor(null)} align="end">
+            <ScheduleMenu
+              text={text}
+              replyTo={replyTo?.id}
+              onDone={() => {
+                setLaterAnchor(null)
+                setText('')
+                onCancelReply()
+              }}
+            />
+          </Popover>
+        )}
         <button className="btn primary send" onClick={submit} disabled={!text.trim() || busy} aria-label={t('chat.send')}>
           <Icon name="send" size={18} />
         </button>
@@ -438,5 +464,28 @@ function ChatSearch({ chatId, onClose }: { chatId: string; onClose: () => void }
         </ul>
       )}
     </div>
+  )
+}
+
+function ReminderButton({ chatId }: { chatId: string }) {
+  const t = useT()
+  const has = useOrg((s) => s.reminders.some((r) => r.chatId === chatId))
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  return (
+    <>
+      <button
+        className={`icon-btn ${anchor || has ? 'on' : ''} ${has ? 'has-reminder' : ''}`}
+        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+        aria-label={t('rem.title')}
+        title={t('rem.title')}
+      >
+        <Icon name="alarm" />
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} align="end">
+          <ReminderMenu chatIds={[chatId]} onDone={() => setAnchor(null)} />
+        </Popover>
+      )}
+    </>
   )
 }

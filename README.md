@@ -9,6 +9,9 @@ groups. It runs entirely in the browser and installs as a desktop app (PWA).
   you, sorted: mentions and DMs first, then by workspace. Muted noise stays folded.
 - **Bulk actions.** Select 40 groups and mark read, mute, archive, tag, snooze or
   move them in one go. Telegram calls are queued to respect rate limits.
+- **Follow-ups and reminders.** Send a message later (Telegram holds it and sends it
+  on time, even with the app closed), optionally withdrawn if they reply first. Or ask
+  to see a chat again in 3 days, with a note, "only if nobody answered".
 - **Tags, priorities, private notes, snooze.** Low-priority chats leave the inbox
   unless someone mentions you.
 - **Keyboard first.** `Ctrl K` to jump anywhere, `J`/`K` to move, `E` to mark read
@@ -20,6 +23,12 @@ There is no Switchboard server. The app talks to Telegram directly over MTProto
 (via [GramJS](https://github.com/gram-js/gramjs)) from your browser. Your session
 lives in `localStorage`; workspaces, tags and notes live in `localStorage` too and
 never reach Telegram or anyone else. Export them from Settings to move them.
+Tick "Keep nothing from my account on this computer" at sign-in to hold all of it in
+the tab only: closing it erases the session and your sorting.
+
+Follow-ups are cancelled by the app when it sees a reply, so it must be open at least
+once between the reply and the send time. Reminders only alert while the app is open;
+due ones wait at the top of "To handle".
 
 ## Run it
 

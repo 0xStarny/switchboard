@@ -63,6 +63,14 @@ export interface Topic {
   iconColor?: number
 }
 
+/** A message Telegram holds and sends by itself at `date`, even if Switchboard is closed. */
+export interface ScheduledMessage {
+  id: number
+  chatId: string
+  date: number // unix seconds
+  text: string
+}
+
 export interface Me {
   id: string
   name: string
@@ -73,6 +81,7 @@ export type Update =
   | { type: 'message'; message: Message; chatTitle?: string }
   | { type: 'read'; chatId: string; maxId: number; unread: number }
   | { type: 'dialogsChanged' }
+  | { type: 'scheduledChanged'; chatId: string }
 
 /** Everything the UI needs from Telegram. Implemented by the live client and the demo. */
 export interface Provider {
@@ -89,6 +98,10 @@ export interface Provider {
   thumb(chatId: string, messageId: number): Promise<string | null>
   download(chatId: string, messageId: number): Promise<Blob | null>
   search(chatId: string, query: string): Promise<Message[]>
+  schedule(chatId: string, text: string, at: number, opts?: { replyTo?: number; topicId?: number }): Promise<ScheduledMessage>
+  scheduled(chatId: string): Promise<ScheduledMessage[]>
+  cancelScheduled(chatId: string, ids: number[]): Promise<void>
+  sendScheduledNow(chatId: string, ids: number[]): Promise<void>
   onUpdate(cb: (u: Update) => void): () => void
   logout(): Promise<void>
 }

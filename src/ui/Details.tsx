@@ -6,6 +6,7 @@ import { snoozeTargets } from '../lib/format'
 import { Avatar } from './bits'
 import { Icon } from './Icon'
 import { tgLink } from './Conversation'
+import { ReminderMenu } from './Later'
 
 export function Details() {
   const t = useT()
@@ -121,6 +122,13 @@ export function Details() {
             onChange={(e) => setNote(e.target.value)}
             onBlur={() => org.setNote(chat.id, note)}
           />
+        </div>
+
+        <div className="field">
+          <span className="field-label">{t('rem.button')}</span>
+          <div className="details-reminder">
+            <ReminderMenu key={chat.id} chatIds={[chat.id]} onDone={() => undefined} />
+          </div>
         </div>
 
         <div className="details-actions">

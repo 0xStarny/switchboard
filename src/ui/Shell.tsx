@@ -7,6 +7,41 @@ import { Conversation } from './Conversation'
 import { Details } from './Details'
 import { Palette, Settings, WorkspaceEditor } from './Panels'
 import { Toasts } from './bits'
+import { useOrg } from '../store/org'
+import { reconcileFollowups } from '../store/followups'
+import { tNow } from '../lib/i18n'
+
+/** Tell people when a reminder comes due while the app is open (toast + system notification). */
+function useReminderAlerts() {
+  useEffect(() => {
+    const seen = new Set(useOrg.getState().reminders.filter((r) => r.at <= Date.now()).map((r) => r.id))
+    const tick = () => {
+      const { reminders } = useOrg.getState()
+      const app = useApp.getState()
+      for (const r of reminders) {
+        if (r.at > Date.now() || seen.has(r.id)) continue
+        seen.add(r.id)
+        const title = tNow('rem.notify', { name: app.chats[r.chatId]?.title ?? '' })
+        app.toast(r.note ? title + '. ' + r.note : title)
+        if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+          const n = new Notification(title, { body: r.note, icon: '/icon-192.png', tag: r.id })
+          n.onclick = () => {
+            window.focus()
+            app.setView({ kind: 'inbox' })
+            app.openChat(r.chatId)
+          }
+        }
+      }
+    }
+    const a = window.setInterval(tick, 20000)
+    // Catch replies that arrived through other devices while we were not listening.
+    const b = window.setInterval(() => reconcileFollowups().catch(() => undefined), 5 * 60000)
+    return () => {
+      window.clearInterval(a)
+      window.clearInterval(b)
+    }
+  }, [])
+}
 
 const typing = (el: EventTarget | null) => {
   const n = el as HTMLElement | null
@@ -21,6 +56,7 @@ export function Shell() {
   const paletteOpen = useApp((s) => s.paletteOpen)
   const settingsOpen = useApp((s) => s.settingsOpen)
   const [editing, setEditing] = useState<string | null>(null)
+  useReminderAlerts()
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

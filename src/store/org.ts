@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Chat, ChatKind } from '../tg/types'
+import { accountStore } from '../lib/storage'
 
 // Everything here lives only in this browser. Telegram never sees workspaces, tags,
 // notes or snoozes, which is why none of it is limited by Premium.
@@ -32,6 +33,26 @@ export interface Placement {
   folder?: string
 }
 
+/** "Bring this chat back to me on that day", optionally only if nobody answered. */
+export interface Reminder {
+  id: string
+  chatId: string
+  at: number // ms
+  note?: string
+  ifNoReply?: boolean
+  createdAt: number // ms
+}
+
+/** A message scheduled on Telegram that Switchboard cancels if the other side replies first. */
+export interface Followup {
+  id: string
+  chatId: string
+  scheduledId: number
+  at: number // ms
+  text: string
+  createdAt: number // ms
+}
+
 export interface OrgData {
   workspaces: Workspace[]
   tags: Tag[]
@@ -41,11 +62,24 @@ export interface OrgData {
   notes: Record<string, string>
   snooze: Record<string, number>
   priority: Record<string, Priority>
+  reminders: Reminder[]
+  followups: Followup[]
 }
 
 export const SWATCHES = ['#3d6fb6', '#2f8a6c', '#b4572e', '#8a5bb5', '#b38a1d', '#c2416b', '#3f8f9e', '#6b7686']
 
-const empty = (): OrgData => ({ workspaces: [], tags: [], rules: [], placement: {}, chatTags: {}, notes: {}, snooze: {}, priority: {} })
+const empty = (): OrgData => ({
+  workspaces: [],
+  tags: [],
+  rules: [],
+  placement: {},
+  chatTags: {},
+  notes: {},
+  snooze: {},
+  priority: {},
+  reminders: [],
+  followups: [],
+})
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 
@@ -72,9 +106,14 @@ interface OrgStore extends OrgData {
   setPriority(chatIds: string[], p: Priority): void
   addRule(r: Omit<Rule, 'id'>): void
   removeRule(id: string): void
+  addReminders(chatIds: string[], at: number, note?: string, ifNoReply?: boolean): void
+  moveReminder(id: string, at: number): void
+  removeReminder(id: string): void
+  addFollowup(f: Omit<Followup, 'id' | 'createdAt'>): void
+  removeFollowup(id: string): void
 }
 
-const DATA_KEYS: (keyof OrgData)[] = ['workspaces', 'tags', 'rules', 'placement', 'chatTags', 'notes', 'snooze', 'priority']
+const DATA_KEYS: (keyof OrgData)[] = ['workspaces', 'tags', 'rules', 'placement', 'chatTags', 'notes', 'snooze', 'priority', 'reminders', 'followups']
 
 export const useOrg = create<OrgStore>((set, get) => ({
   ...empty(),
@@ -83,7 +122,7 @@ export const useOrg = create<OrgStore>((set, get) => ({
     const key = `sb.org.${accountId}`
     let data = empty()
     try {
-      data = { ...data, ...JSON.parse(localStorage.getItem(key) || '{}') }
+      data = { ...data, ...JSON.parse(accountStore()?.getItem(key) || '{}') }
     } catch {
       /* corrupted: start fresh */
     }
@@ -199,13 +238,32 @@ export const useOrg = create<OrgStore>((set, get) => ({
   removeRule(id) {
     set({ rules: get().rules.filter((r) => r.id !== id) })
   },
+  addReminders(chatIds, at, note, ifNoReply) {
+    const now = Date.now()
+    // One reminder per chat: a new one replaces the previous.
+    const keep = get().reminders.filter((r) => !chatIds.includes(r.chatId))
+    const added = chatIds.map((chatId) => ({ id: uid(), chatId, at, note: note?.trim() || undefined, ifNoReply: ifNoReply || undefined, createdAt: now }))
+    set({ reminders: [...keep, ...added] })
+  },
+  moveReminder(id, at) {
+    set({ reminders: get().reminders.map((r) => (r.id === id ? { ...r, at } : r)) })
+  },
+  removeReminder(id) {
+    set({ reminders: get().reminders.filter((r) => r.id !== id) })
+  },
+  addFollowup(f) {
+    set({ followups: [...get().followups, { ...f, id: uid(), createdAt: Date.now() }] })
+  },
+  removeFollowup(id) {
+    set({ followups: get().followups.filter((f) => f.id !== id) })
+  },
 }))
 
 // Persist on every change, per Telegram account.
 useOrg.subscribe((s) => {
   if (!s.accountKey) return
   try {
-    localStorage.setItem(s.accountKey, JSON.stringify(s.exportData()))
+    accountStore()?.setItem(s.accountKey, JSON.stringify(s.exportData()))
   } catch {
     /* storage full or blocked */
   }
