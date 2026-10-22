@@ -1,0 +1,53 @@
+# Switchboard
+
+An unofficial, open-source Telegram web client for people who live in hundreds of
+groups. It runs entirely in the browser and installs as a desktop app (PWA).
+
+- **Workspaces without limits.** Group chats by client, project or community, with
+  folders inside each workspace and automatic rules ("name contains Halden").
+- **One list of what is waiting.** "To handle" shows only unread chats that need
+  you, sorted: mentions and DMs first, then by workspace. Muted noise stays folded.
+- **Bulk actions.** Select 40 groups and mark read, mute, archive, tag, snooze or
+  move them in one go. Telegram calls are queued to respect rate limits.
+- **Tags, priorities, private notes, snooze.** Low-priority chats leave the inbox
+  unless someone mentions you.
+- **Keyboard first.** `Ctrl K` to jump anywhere, `J`/`K` to move, `E` to mark read
+  and go to the next chat.
+
+## Privacy
+
+There is no Switchboard server. The app talks to Telegram directly over MTProto
+(via [GramJS](https://github.com/gram-js/gramjs)) from your browser. Your session
+lives in `localStorage`; workspaces, tags and notes live in `localStorage` too and
+never reach Telegram or anyone else. Export them from Settings to move them.
+
+## Run it
+
+```bash
+npm install
+cp .env.example .env.local   # then fill in the two values
+npm run dev                  # http://localhost:8790
+```
+
+`VITE_TG_API_ID` and `VITE_TG_API_HASH` come from <https://my.telegram.org> >
+API development tools. They identify the **app**, not a user: every visitor signs
+in with their own Telegram account. Without them, the app asks for a key on first
+launch and keeps it in that browser, which is handy for self-hosting.
+
+Try it without an account at `/#demo`.
+
+## Deploy
+
+It is a static site. On Vercel or Netlify: build command `npm run build`, output
+`dist`, and set the two `VITE_TG_*` variables (plus `VITE_REPO_URL` if you want a
+source link on the sign-in page).
+
+## Not yet
+
+Voice and video calls, stickers picker, sending files, reactions, editing and
+deleting messages, secret chats. Telegram Premium features stay Premium: this app
+only adds organisation on top.
+
+## License
+
+MIT. Switchboard is not affiliated with Telegram.
