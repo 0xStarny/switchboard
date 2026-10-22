@@ -38,9 +38,11 @@ Try it without an account at `/#demo`.
 
 ## Deploy
 
-It is a static site. On Vercel or Netlify: build command `npm run build`, output
-`dist`, and set the two `VITE_TG_*` variables (plus `VITE_REPO_URL` if you want a
-source link on the sign-in page).
+It is a static site. On Vercel, import the repo (settings come from `vercel.json`)
+and add `VITE_TG_API_ID` and `VITE_TG_API_HASH` as environment variables. Netlify or
+any static host works the same way: build command `npm run build`, output `dist`.
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2F0xStarny%2Fswitchboard&env=VITE_TG_API_ID,VITE_TG_API_HASH&envDescription=Telegram%20app%20key%20from%20my.telegram.org&envLink=https%3A%2F%2Fmy.telegram.org%2Fapps)
 
 ## Not yet
 
